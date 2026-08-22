@@ -2,44 +2,27 @@ require("./instrument.js");
 
 const Sentry = require("@sentry/node");
 const express = require('express');
+const cors = require('cors')
+const { createClient } = require('@supabase/supabase-js')
+require('dotenv').config()
 const app = express()
 const port = 3000
 
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+)
+
+app.use(cors())
+app.use(express.json())
 
 app.get('/', (req, res) => {
   res.send('Hello')
 });
 
-
-// Do not edit this route
 app.get("/debug-sentry", function mainHandler(req, res) {
   throw new Error("My first Sentry error!");
 });
-// server.js
-// Backend API for a login system using Supabase Auth
-// -----------------------------------------------------
-// Install dependencies first:
-//   npm init -y
-//   npm install express @supabase/supabase-js dotenv cors
-
-const express = require('express')
-const cors = require('cors')
-const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
-
-const app = express()
-app.use(cors())
-app.use(express.json())
-
-// -----------------------------------------------------
-// 1. Set up Supabase client
-// -----------------------------------------------------
-// Use the ANON key here (safe for auth calls made on behalf of a user).
-// Keep these in a .env file — never hardcode or commit them.
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-)
 
 // -----------------------------------------------------
 // 2. SIGN UP route
@@ -133,14 +116,6 @@ app.get('/api/profile', async (req, res) => {
     message: 'This is protected data.',
     user,
   })
-})
-
-// -----------------------------------------------------
-// Start server
-// -----------------------------------------------------
-const PORT = process.env.PORT || 3001
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
 })
 
 Sentry.setupExpressErrorHandler(app);
