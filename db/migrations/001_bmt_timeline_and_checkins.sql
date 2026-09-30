@@ -2,7 +2,7 @@
 
 create table public.companies (
   id            bigint generated always as identity primary key,
-  name          text not null,                 -- e.g. 'Hotel Company'
+  name          text not null,                
   batch_number  text not null,                 -- e.g. '03/26' (text so formats like 03/26 work)
   start_date    date not null,                 -- enlistment / batch start
   end_date      date not null,                 -- POP / batch end
@@ -37,7 +37,7 @@ create table public.moods (
   id     smallint primary key,
   name   text not null unique,
   score  smallint not null unique check (score between 1 and 10),
-  color  text                                   -- hex colour used in the UI
+  color  text                                 
 );
 
 
@@ -47,8 +47,8 @@ create table public.daily_checkins (
   user_id     uuid not null default auth.uid()
                 references auth.users(id) on delete cascade,
   mood_id     smallint not null references public.moods(id),
-  note        text check (char_length(note) <= 2000),   -- optional short note
-  created_at  timestamptz not null default now()        -- the timestamp
+  note        text check (char_length(note) <= 2000),   
+  created_at  timestamptz not null default now()       
 );
 
 create index daily_checkins_user_time_idx on public.daily_checkins (user_id, created_at desc);
