@@ -3,9 +3,9 @@
 create table public.companies (
   id            bigint generated always as identity primary key,
   name          text not null,                
-  batch_number  text not null,                 -- e.g. '03/26' (text so formats like 03/26 work)
-  start_date    date not null,                 -- enlistment / batch start
-  end_date      date not null,                 -- POP / batch end
+  batch_number  text not null,                 
+  start_date    date not null,                 
+  end_date      date not null,                 
   created_at    timestamptz not null default now(),
 
   constraint companies_dates_valid check (end_date >= start_date),
