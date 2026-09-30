@@ -1,7 +1,7 @@
 
 create table public.commanders (
   user_id     uuid primary key references auth.users(id) on delete cascade,
-  rank_name   text,                                 -- optional, e.g. '2LT Tan'
+  rank_name   text,                               
   created_at  timestamptz not null default now()
 );
 
@@ -16,7 +16,7 @@ create table public.company_commanders (
 create index company_commanders_user_idx on public.company_commanders (user_id);
 
 
--- Track who created each company (filled in automatically)
+
 alter table public.companies
   add column created_by uuid default auth.uid() references auth.users(id) on delete set null;
 
