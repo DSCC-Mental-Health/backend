@@ -3,22 +3,10 @@ site:
   title: backend
   structure:
     - type: section
-      key: section-1
-      title: backend
-      path: backend
-      default: true
-      children:
-        - type: space
-          key: backend
-          title: backend
-          path: backend
-          default: true
-          content:
-            directory: ./
-    - type: section
       key: section-2
       title: API Reference
       path: api-reference
+      default: true
       children:
         - type: space
           key: space-1
@@ -28,3 +16,15 @@ site:
           draft: true
           content:
             directory: ./api-reference
+    - type: section
+      key: section-1
+      title: backend
+      path: backend
+      children:
+        - type: space
+          key: backend
+          title: backend
+          path: backend
+          default: true
+          content:
+            directory: ./
