@@ -1,0 +1,12 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: backend
+  structure:
+    - type: space
+      key: backend
+      title: backend
+      path: backend
+      default: true
+      content:
+        directory: .
