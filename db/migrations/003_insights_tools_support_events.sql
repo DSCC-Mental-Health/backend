@@ -1,34 +1,4 @@
--- =====================================================================
--- DSCC Mental Health App — 003: insights, tools, support hub, BMT events
--- Run AFTER 001 and 002.
--- How to run: Supabase dashboard → SQL Editor → New query → paste all → Run
--- Spec: Main Functionality → "Insights, tools, support hub and BMT events"
--- =====================================================================
---
--- What this adds:
---   profiles           – links a recruit to their company batch + support preference
---   insights           – cached AI insight cards (one row per user, ≤ 1 regen / day)
---   tools              – the five techniques in the tools library (editable copy)
---   tool_sessions      – "I finished a technique" log (feeds insights)
---   support_resources  – mindline.sg, SAF hotline, paraCounsellor, urgent lines
---   app_flags          – feature flags (paraCounsellor handoff is OFF)
---   handoff_requests   – paraCounsellor handoff requests (blocked until sign-off)
---   insight_stats()    – the numbers Claude is allowed to see (no journal, no notes)
---   insight_patterns() – mood before / during / after each BMT high-key
---
--- Privacy rules kept from 001/002:
---   • Everything a recruit generates (insights, tool sessions, handoffs) is
---     readable only by that recruit. No commander policy is added anywhere.
---   • The AI only ever gets numbers + high-key names from insight_stats().
---     Check-in notes and journal text never leave the database for insights.
--- =====================================================================
 
-
--- ---------------------------------------------------------------------
--- 1. PROFILES — which company batch a recruit belongs to
---    ("Milestone dates come from the schedule you entered at setup")
---    Written with IF NOT EXISTS so it's safe if onboarding already made it.
--- ---------------------------------------------------------------------
 create table if not exists public.profiles (
   user_id     uuid primary key default auth.uid() references auth.users(id) on delete cascade,
   created_at  timestamptz not null default now()
@@ -36,10 +6,6 @@ create table if not exists public.profiles (
 
 alter table public.profiles
   add column if not exists company_id bigint references public.companies(id) on delete set null,
-  -- how much a recruit is willing to reveal when seeking support:
-  --   anonymous  → only options that reveal nothing (mindline.sg)
-  --   phone      → + options that show your number (SAF hotline)
-  --   any        → everything, incl. in-person paraCounsellor (default)
   add column if not exists support_preference text not null default 'any',
   add column if not exists updated_at timestamptz not null default now();
 
@@ -64,12 +30,7 @@ create policy "own profile: update" on public.profiles
   for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---------------------------------------------------------------------
--- 2. INSIGHTS — cached AI cards. One row per user.
---    Only the backend (service role) writes here, so the app can't fake cards.
---    data_through = newest check-in / tool session the cards were built from;
---    the backend regenerates only when generated_at > 24 h old AND newer data exists.
--- ---------------------------------------------------------------------
+
 create table public.insights (
   user_id       uuid primary key references auth.users(id) on delete cascade,
   cards         jsonb not null default '[]'::jsonb,
@@ -84,18 +45,10 @@ alter table public.insights enable row level security;
 
 create policy "own insights: select" on public.insights
   for select to authenticated using (user_id = auth.uid());
--- Recruits may wipe their own cached cards (e.g. after deleting entries).
+
 create policy "own insights: delete" on public.insights
   for delete to authenticated using (user_id = auth.uid());
--- No insert/update policy on purpose: only the service role writes.
 
-
--- ---------------------------------------------------------------------
--- 3. TOOLS — the five techniques. Fixed content, edited in Table Editor.
---    steps = ordered array the app plays through, e.g.
---      [{ "label": "Breathe in", "cue": "...", "seconds": 4 }]
---    cycles = how many times to repeat the steps (breathing exercises).
--- ---------------------------------------------------------------------
 create table public.tools (
   id            smallint generated always as identity primary key,
   slug          text not null unique check (slug ~ '^[a-z0-9-]+$'),
@@ -112,9 +65,7 @@ alter table public.tools enable row level security;
 create policy "read tools" on public.tools for select to authenticated using (true);
 
 
--- ---------------------------------------------------------------------
--- 4. TOOL_SESSIONS — "I finished a technique". Private to the recruit.
--- ---------------------------------------------------------------------
+
 create table public.tool_sessions (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -136,16 +87,7 @@ create policy "own tool sessions: delete" on public.tool_sessions
   for delete to authenticated using (user_id = auth.uid());
 
 
--- ---------------------------------------------------------------------
--- 5. SUPPORT_RESOURCES — static content for the Support hub.
---    reveals = what using it reveals about you (drives the coloured tag
---    and the supportPreference filter):
---      nothing  → "Nothing revealed"
---      number   → "Shows your number"
---      identity → "They'll know it's you"
---    is_urgent rows are the "If you need help right now" sheet; they are
---    always returned, whatever the preference.
--- ---------------------------------------------------------------------
+
 create table public.support_resources (
   id           smallint generated always as identity primary key,
   slug         text not null unique,
@@ -164,16 +106,13 @@ alter table public.support_resources enable row level security;
 create policy "read support resources" on public.support_resources
   for select to authenticated using (active);
 
--- Who the unit paraCounsellor is ("Steady shows you who they are").
--- Commanders already have UPDATE on their own companies (002), so they fill these in.
+
 alter table public.companies
   add column if not exists paracounsellor_name    text,
-  add column if not exists paracounsellor_details text;   -- e.g. 'Sgt Lim, Platoon 2 bunk, after last parade'
+  add column if not exists paracounsellor_details text;  
 
 
--- ---------------------------------------------------------------------
--- 6. FEATURE FLAGS
--- ---------------------------------------------------------------------
+
 create table public.app_flags (
   key      text primary key,
   enabled  boolean not null default false,
@@ -191,14 +130,7 @@ as $$
 $$;
 
 
--- ---------------------------------------------------------------------
--- 7. HANDOFF_REQUESTS — paraCounsellor handoff (specified now, OFF until sign-off)
---    The reason text is NOT stored by default: it is only kept when the
---    recruit explicitly ticks include_reason. Being visible is the barrier
---    the app exists to remove.
---    The flag is checked inside the INSERT policy too, so nobody can bypass
---    the API by writing to the table directly while it's switched off.
--- ---------------------------------------------------------------------
+
 create table public.handoff_requests (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -222,33 +154,18 @@ create policy "own handoffs: insert (flag on)" on public.handoff_requests
   with check (user_id = auth.uid() and public.flag_enabled('paracounsellor_handoff'));
 create policy "own handoffs: delete" on public.handoff_requests
   for delete to authenticated using (user_id = auth.uid());
--- Who can READ requests on the paraCounsellor side is deliberately not
--- defined yet — decide that during professional sign-off.
 
-
--- ---------------------------------------------------------------------
--- 8. HELPERS
--- ---------------------------------------------------------------------
--- Today's date in Singapore (all "day" logic uses SG time, not UTC)
 create function public.sg_today()
 returns date
 language sql stable
 as $$ select (now() at time zone 'Asia/Singapore')::date; $$;
 
--- The calling recruit's company (null if they haven't picked one)
 create function public.my_company_id()
 returns bigint
 language sql stable security invoker set search_path = public
 as $$ select company_id from public.profiles where user_id = auth.uid(); $$;
 
 
--- ---------------------------------------------------------------------
--- 9. INSIGHT_PATTERNS — mood averages before / during / after each high-key
---    Windows (Singapore dates): before = the p_window days before,
---    during = the scheduled day, after = the p_window days after.
---    Runs as the caller, so RLS limits it to their own check-ins.
---    Averages use moods.score (Rough 1 … Good 4).
--- ---------------------------------------------------------------------
 create function public.insight_patterns(p_window integer default 3)
 returns table (
   highkey_id      bigint,
@@ -289,12 +206,7 @@ as $$
 $$;
 
 
--- ---------------------------------------------------------------------
--- 10. INSIGHT_STATS — EVERYTHING the AI is allowed to see, as one JSON.
---     Numbers and high-key/tool names only. No note text, no journal,
---     no user id, no name. Runs as the caller (RLS applies).
---     Small groups (n < 2) are left out so the AI can't over-read one entry.
--- ---------------------------------------------------------------------
+
 create function public.insight_stats()
 returns jsonb
 language sql stable security invoker set search_path = public
@@ -418,17 +330,11 @@ as $$
 $$;
 
 
--- =====================================================================
--- STARTER DATA
--- =====================================================================
 
 insert into public.app_flags (key, enabled, note) values
   ('paracounsellor_handoff', false,
    'Keep OFF until professional sign-off. /support/handoff returns 403 FEATURE_DISABLED while off.');
 
--- The five techniques (copy matches the Tools screen; edit freely).
--- NOTE: "Wind-down body scan" is a placeholder for the "End of a hard day"
--- slot — the mockup cuts off there. Replace with the real fifth technique.
 insert into public.tools (slug, name, summary, category, steps, cycles, duration_sec, sort_order) values
   ('box-breathing', 'Box breathing',
    'In for four, hold four, out for four, hold four. The one instructors teach.',
@@ -474,7 +380,7 @@ insert into public.tools (slug, name, summary, category, steps, cycles, duration
      {"label":"Whole body","cue":"Notice your whole body at once, breathing.","seconds":60}]'::jsonb,
    1, 300, 5);
 
--- Support hub. Phone numbers checked 19 Oct 2026 against CMPB and MOH sources.
+
 insert into public.support_resources (slug, name, description, channel, reveals, tags, contact, is_urgent, sort_order) values
   ('mindline-sg', 'mindline.sg',
    'Opens inside Steady. Anonymous self-help tools and an AI chat. No sign-up, no phone number.',
@@ -491,7 +397,6 @@ insert into public.support_resources (slug, name, description, channel, reveals,
    'in_person', 'identity', array['In person', 'Free'],
    '{}', false, 3),
 
-  -- "If you need help right now" — always shown
   ('national-mindline-1771', 'national mindline 1771',
    'Singapore''s national mental health helpline. Call or WhatsApp, any time.',
    'phone', 'number', array['Phone', 'WhatsApp', '24/7'],
