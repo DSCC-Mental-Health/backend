@@ -5,8 +5,9 @@ const express = require('express');
 const cors = require('cors')
 const { createClient } = require('@supabase/supabase-js')
 require('dotenv').config()
+const { mountApi } = require('./routes')
 const app = express()
-const port = 3000
+const port = process.env.PORT || 3000
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -118,6 +119,17 @@ app.get('/api/profile', async (req, res) => {
   })
 })
 
+// -----------------------------------------------------
+// 6. Insights, tools, support hub and BMT events API
+// -----------------------------------------------------
+// GET  /api/insights            GET  /api/support/resources
+// GET  /api/insights/patterns   POST /api/support/handoff
+// GET  /api/tools               GET  /api/events
+// GET  /api/tools/:slug         GET  /api/events/upcoming
+// POST /api/tools/:slug/sessions
+// See README.md. Mounted after the routes above, before Sentry's handler.
+mountApi(app, { reportError: (err) => Sentry.captureException(err) })
+
 Sentry.setupExpressErrorHandler(app);
 
 // Do not touch this route
@@ -130,6 +142,12 @@ app.use(function onError(err, req, res, next) {
 
 
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-});
+// Start listening only when run directly (`node src/app.js` / `npm start`),
+// so tests can import the app without opening a port.
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Example app listening on port ${port}`)
+  });
+}
+
+module.exports = app;
